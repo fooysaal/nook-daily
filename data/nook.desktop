@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Nook
+Comment=Local notes, tasks and clipboard companion
+Exec=nook
+Icon=nook
+Terminal=false
+Categories=Utility;
+StartupNotify=false

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make)",
+      "Bash(make check)",
+      "Bash(make clean)",
+      "Bash(make run)",
+      "Bash(git status --short)"
+    ]
+  }
+}
