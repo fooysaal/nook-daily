@@ -1,9 +1,11 @@
 CC      ?= gcc
+VERSION  = 0.2.0
 PKGS     = gtk+-3.0
 PREFIX  ?= $(HOME)/.local
 ICONDIR ?= $(CURDIR)/data/icons
 
-CFLAGS  += -std=c11 -Wall -Wextra -O2 -DNOOK_ICON_DIR='"$(ICONDIR)"' $(shell pkg-config --cflags $(PKGS))
+CFLAGS  += -std=c11 -Wall -Wextra -O2 -DNOOK_ICON_DIR='"$(ICONDIR)"' -DNOOK_VERSION='"$(VERSION)"' \
+           $(shell pkg-config --cflags $(PKGS))
 LDLIBS  += $(shell pkg-config --libs $(PKGS))
 
 SRC = src/main.c src/store.c src/tray.c

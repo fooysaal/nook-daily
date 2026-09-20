@@ -35,8 +35,10 @@ Fully local. No account, cloud, telemetry, analytics, or sync.
 
 - Notes — timestamped text capture, delete.
 - Tasks — add/check/delete.
-- Clips — read the system clipboard or paste manually, delete.
-- Capture — placeholder only. Do not implement unless scope explicitly expands.
+- Clips — automatic clipboard capture (toggle in the tab), read the clipboard or paste manually,
+  copy back, keep, delete.
+- Capture — **removed on request.** The placeholder tab and `build_capture_page()` are gone;
+  do not reinstate them. Screenshot/recording is not the direction.
 
 ## Implementation constraints
 
@@ -46,6 +48,10 @@ Fully local. No account, cloud, telemetry, analytics, or sync.
 - Persistence is GKeyFile at `~/.local/share/nook/data.ini`. No JSON library, no database.
 - Preserve keyboard access and focus visibility.
 - `make check` must keep passing; extend `src/test_store.c` when persistence changes.
+- Versioning is semver in one place: `VERSION` in the `Makefile`, reaching the code as
+  `NOOK_VERSION` (`nook --version`, and the footer tooltip). Every user-visible change goes in
+  `CHANGELOG.md` under *Unreleased* as it is made, and the version is bumped when that section
+  becomes a release — a feature or behaviour change is a minor bump while the major is 0.
 
 ## Hard-won platform constraints — do not re-litigate
 
@@ -82,6 +88,28 @@ Fully local. No account, cloud, telemetry, analytics, or sync.
   renders the dbusmenu itself. A host that instead calls `ContextMenu` would show nothing, and
   since Quit lives only in the tray menu those users would have no way to exit. Revisit if a
   non-GNOME host is ever targeted.
+- **A clipboard manager re-announces a clip after the owning app quits.** Auto-capture skips a
+  clip whose targets carry a password-manager hint, but when that app exits the desktop's
+  clipboard manager takes ownership and re-offers the same text *without* the hint, which lands a
+  secret in `data.ini` on the second `owner-change`. `src/main.c` therefore remembers the SHA-256
+  of a skipped clip and drops it again. Re-test by copying with the hint target set and then
+  killing the owner, not just while it is alive.
+- **Auto-capture reads the clipboard asynchronously.** `owner-change` fires on the main loop
+  while the new owner may not be ready to answer, so `gtk_clipboard_request_text()` is used, not
+  `gtk_clipboard_wait_for_text()`, which would stall the UI.
+- **The theme paints square corners over the panel's radius.** GTK does not clip a child to a
+  rounded parent, so Adwaita's 1px border on the `notebook` node (and the opaque background on
+  `notebook header`) drew straight across `.panel`'s 14px top corners, while the footer left the
+  bottom two clean. `STYLE` zeroes both. Probing the extreme corner pixel proves nothing — it is
+  transparent either way; sample the ~28px corner patch and compare the top pair against the
+  bottom pair.
+- **Row icons come from the icon theme, with a text fallback.** The copy button uses
+  `edit-copy-symbolic` only when `gtk_icon_theme_has_icon()` says it exists, otherwise the word
+  `Copy`; a themed icon that is missing renders as a placeholder, exactly like the tray `…`.
+- **`%l` pads with a figure space, not a space.** The 12h clock format from
+  `org.gnome.desktop.interface clock-format` uses `%l`, and glib pads a single-digit hour with
+  U+2007, which `g_strstrip()` does not remove — the time rendered as `⁠ 1:36 PM`. `format_clock()`
+  skips it explicitly.
 - **Vanilla GNOME has no AppIndicator host.** The icon will not appear on Fedora Workstation or
   Arch + GNOME without `gnome-shell-extension-appindicator`. `install.sh` warns about this.
 
@@ -113,6 +141,14 @@ Manual QA:
 - Tabs switch sections without closing the panel.
 - The close button and Quit in the tab row both work.
 - Notes add/delete, Tasks toggle, Clips clipboard grab — each survives a restart.
+- Copying anything else adds a clip by itself; a copy over 8 KB does not, and unticking
+  **Auto-save** stops capture and survives a restart.
+- The copy button flashes a checkmark and "Copied to clipboard" for 1.5s; **Starred** lists only
+  kept clips and says so when none are kept.
+- All four panel corners follow the 14px radius.
+- Every list groups under Today / Yesterday / locale date, and times follow
+  `org.gnome.desktop.interface clock-format`. Seed `data.ini` with timestamps a few days apart to
+  check it; a schema-less system must fall back to 24h rather than fail.
 - Escape and clicking away both hide the panel; Quit exits and removes the icon.
 
 ## Development note

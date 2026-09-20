@@ -78,12 +78,14 @@ taskbar entry.
 
 ```
 ┌──────────────────────────────────┐
-│ Notes  Tasks  Clips  Capture   ✕ │  ← tab row; ✕ hides the panel
+│ Notes   Tasks   Clips          ✕ │  ← tab row; ✕ hides the panel
 ├──────────────────────────────────┤
 │ [ Quick note…            ] [Add] │  ← type, press Enter or click Add
 │                                  │
+│  TODAY                           │  ← items group under the day they were taken
 │  remember the milk          ✕    │  ← newest first; ✕ deletes this item
-│  14:22                           │  ← capture time
+│  14:22                           │  ← capture time, in your 12h/24h setting
+│  YESTERDAY                       │
 │  pick up the dry cleaning   ✕    │
 │  09:04                           │
 ├──────────────────────────────────┤
@@ -100,8 +102,10 @@ says *"could not save — changes will be lost"* instead of failing quietly.
 |---|---|
 | **Notes** | Type and press **Enter** (or click **Add**). Each note is timestamped and stays until you delete it with ✕. |
 | **Tasks** | Same, plus a checkbox. Checking an item strikes it through and dims it; the state survives a restart. |
-| **Clips** | **Grab clipboard** saves whatever you last copied. Or paste into the entry and click **Save**. Long URLs and tokens wrap instead of stretching the window. |
-| **Capture** | Placeholder. Screenshot and screen recording are not implemented — the buttons are visibly disabled. |
+| **Clips** | Copies are saved as you make them while **Auto-save** is ticked; **Grab clipboard** and the entry still save on demand. Each clip has a copy button — which says **Copied to clipboard** for a moment when you press it — and ★ to keep it from being evicted. Tick **Starred** to list only the kept ones. Long URLs and tokens wrap instead of stretching the window. |
+
+Every list groups by day — **Today**, **Yesterday**, then the date in your locale's format — and
+times follow the desktop's 12h/24h setting.
 
 Switching tabs never closes the panel, and Nook reopens on the tab you used last.
 
@@ -173,7 +177,11 @@ make          # build ./nook
 make run      # build and run from the source tree
 make check    # persistence round-trip test
 make clean    # remove objects and binaries
+./nook --version
 ```
+
+The version lives in one place, `VERSION` in the `Makefile`; it reaches the binary as
+`NOOK_VERSION`. Every user-visible change is recorded in [CHANGELOG.md](CHANGELOG.md).
 
 Exercise the tray without touching the mouse:
 
@@ -190,6 +198,7 @@ src/main.c                    GTK UI, window lifecycle, panel positioning
 src/tray.c/.h                 StatusNotifierItem + dbusmenu, spoken directly over GDBus
 src/store.c/.h                items and GKeyFile persistence
 src/test_store.c              round-trip test (make check)
+CHANGELOG.md                  what changed in each version
 data/nook.desktop             desktop entry
 data/icons/hicolor/           a complete icon theme, index.theme included
 ```
@@ -209,12 +218,14 @@ Fully local, deliberately small:
 - No account, no cloud, no sync, no telemetry, no analytics.
 - No Electron, Node, Rust or webview — an earlier Tauri prototype was removed on purpose.
 - No dragging or floating mascot window — built, tested, and deliberately dropped.
-- Capture (screenshot / recording) is a placeholder and stays one until scope expands.
+- No screenshot or screen recording. The placeholder tab for it was removed.
 
 ## Contributing
 
-Small surface is the point. Two rules: `make check` must keep passing, and GTK3 stays the only
-dependency. Extend `src/test_store.c` when persistence changes.
+Small surface is the point. Three rules: `make check` must keep passing, GTK3 stays the only
+dependency, and anything a user would notice gets a line in [CHANGELOG.md](CHANGELOG.md) under
+*Unreleased* — bump `VERSION` in the `Makefile` when that becomes a release. Extend
+`src/test_store.c` when persistence changes.
 
 ## License
 

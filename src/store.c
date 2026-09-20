@@ -4,9 +4,13 @@
 #include <string.h>
 #include <errno.h>
 
+#define CLIP_LIMIT 50
+
 static const char *SECTION_KEYS[SECTION_COUNT] = { "notes", "tasks", "clips" };
+static const char *SETTINGS_GROUP = "settings";
 static GList *lists[SECTION_COUNT];
 static gboolean save_ok = TRUE;
+static gboolean auto_clips = TRUE;
 
 static void item_free(Item *item) {
     g_free(item->id);
@@ -18,9 +22,11 @@ static char *data_path(void) {
     return g_build_filename(g_get_user_data_dir(), "nook", "data.ini", NULL);
 }
 
+/* Never returns 0: equal timestamps then sort after what is already there, which keeps items
+ * captured within the same second in the order they were written. */
 static gint by_ts(gconstpointer a, gconstpointer b) {
     gint64 diff = ((const Item *) a)->ts - ((const Item *) b)->ts;
-    return diff < 0 ? -1 : diff > 0 ? 1 : 0;
+    return diff < 0 ? -1 : 1;
 }
 
 GList *store_items(Section section) {
@@ -35,12 +41,16 @@ void store_load(void) {
     /* Reset first: loading twice would otherwise duplicate every item, and the duplicates share
      * ids, so edits would hit only the first copy. */
     store_free();
+    auto_clips = TRUE;
 
     g_autofree char *path = data_path();
     g_autoptr(GKeyFile) kf = g_key_file_new();
 
     if (!g_key_file_load_from_file(kf, path, G_KEY_FILE_NONE, NULL))
         return;
+
+    if (g_key_file_has_key(kf, SETTINGS_GROUP, "auto_clips", NULL))
+        auto_clips = g_key_file_get_boolean(kf, SETTINGS_GROUP, "auto_clips", NULL);
 
     gsize count = 0;
     g_auto(GStrv) groups = g_key_file_get_groups(kf, &count);
@@ -86,10 +96,11 @@ void store_save(void) {
             g_autofree char *group = g_strdup_printf("%s.%s", SECTION_KEYS[s], item->id);
             g_key_file_set_string(kf, group, "text", item->text);
             g_key_file_set_int64(kf, group, "ts", item->ts);
-            if (s == SECTION_TASKS)
+            if (s != SECTION_NOTES)
                 g_key_file_set_boolean(kf, group, "done", item->done);
         }
     }
+    g_key_file_set_boolean(kf, SETTINGS_GROUP, "auto_clips", auto_clips);
 
     g_autoptr(GError) error = NULL;
     save_ok = g_key_file_save_to_file(kf, path, &error);
@@ -97,12 +108,36 @@ void store_save(void) {
         g_warning("nook: could not save %s: %s", path, error->message);
 }
 
-void store_add(Section section, const char *text) {
+/* Auto-captured clips arrive on their own, so the oldest unkept one makes way once the list is
+ * full; a list of nothing but kept clips is left to grow. `arrival` is never the victim: with the
+ * cap full of kept clips it would be the only candidate, and evicting it would drop every new
+ * clip the instant it was stored, quietly killing auto-capture.
+ * ponytail: rescans the list per eviction, which is nothing at CLIP_LIMIT 50 — keep a running
+ * count if the cap ever grows. */
+static void trim_clips(const Item *arrival) {
+    while (g_list_length(lists[SECTION_CLIPS]) > CLIP_LIMIT) {
+        GList *victim = NULL;
+        for (GList *l = lists[SECTION_CLIPS]; l && !victim; l = l->next) {
+            Item *item = l->data;
+            if (!item->done && item != arrival)
+                victim = l;
+        }
+        if (!victim)
+            return;
+        item_free(victim->data);
+        lists[SECTION_CLIPS] = g_list_delete_link(lists[SECTION_CLIPS], victim);
+    }
+}
+
+void store_add(Section section, const char *text, gboolean keep) {
     Item *item = g_new0(Item, 1);
     item->id = g_uuid_string_random();
     item->text = g_strdup(text);
     item->ts = g_get_real_time() / G_USEC_PER_SEC;
+    item->done = keep;
     lists[section] = g_list_append(lists[section], item);
+    if (section == SECTION_CLIPS)
+        trim_clips(item);
     store_save();
 }
 
@@ -128,6 +163,15 @@ void store_toggle(Section section, const char *id) {
         return;
     Item *item = link->data;
     item->done = !item->done;
+    store_save();
+}
+
+gboolean store_auto_clips(void) {
+    return auto_clips;
+}
+
+void store_set_auto_clips(gboolean enabled) {
+    auto_clips = enabled;
     store_save();
 }
 
