@@ -8,6 +8,15 @@ is a feature release and may change behaviour.
 The running version is `VERSION` in the `Makefile`, reported by `nook --version` and in the
 footer's tooltip.
 
+## [Unreleased]
+
+### Fixed
+
+- **Nook starts even when `~/.local/bin` is off your `PATH`.** The installed desktop entry and
+  the autostart copy now carry the full path to the binary instead of a bare `Exec=nook`, which
+  the app menu and the login session could not resolve — the install looked fine and nothing
+  ever launched.
+
 ## [0.2.0] — 2026-09-20
 
 Clips stops being a manual scratchpad: it watches the clipboard for you, and every list is

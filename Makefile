@@ -29,7 +29,10 @@ install:
 	  install -Dm644 $$png $(DESTDIR)$(PREFIX)/share/icons/hicolor/$$sz/apps/nook.png; \
 	done
 	-gtk-update-icon-cache -qtf $(DESTDIR)$(PREFIX)/share/icons/hicolor 2>/dev/null || true
-	install -Dm644 data/nook.desktop $(DESTDIR)$(PREFIX)/share/applications/nook.desktop
+	install -d $(DESTDIR)$(PREFIX)/share/applications
+	sed 's|^Exec=nook$$|Exec=$(PREFIX)/bin/nook|' data/nook.desktop \
+	  > $(DESTDIR)$(PREFIX)/share/applications/nook.desktop
+	chmod 644 $(DESTDIR)$(PREFIX)/share/applications/nook.desktop
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/nook

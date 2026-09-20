@@ -31,7 +31,10 @@ echo "Installed to $PREFIX/bin/nook"
 
 case ":$PATH:" in
     *":$PREFIX/bin:"*) ;;
-    *) echo "Note: $PREFIX/bin is not on your PATH." ;;
+    *) echo "Note: $PREFIX/bin is not on your PATH — the app menu and autostart still work."
+       echo "      To run 'nook' from a shell, add it:"
+       echo "        echo 'export PATH=\"$PREFIX/bin:\$PATH\"' >> ~/.profile"
+       echo "      then log out and back in." ;;
 esac
 
 # GNOME hides tray icons unless an AppIndicator host is present.

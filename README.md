@@ -46,8 +46,9 @@ PREFIX=/usr/local sudo ./install.sh   # system-wide
 make uninstall                    # remove everything above
 ```
 
-If `~/.local/bin` isn't on your `PATH`, the installer says so. Log out and back in if the tray
-icon doesn't show up immediately.
+If `~/.local/bin` isn't on your `PATH`, the installer says so — that only affects typing `nook`
+in a shell. The app menu entry and autostart use the full path, so Nook still starts. Log out and
+back in if the tray icon doesn't show up immediately.
 
 ## Requirements
 
