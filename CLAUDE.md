@@ -55,7 +55,7 @@ Fully local. No account, cloud, telemetry, analytics, or sync.
 - Versioning is semver in one place: `VERSION` in the `Makefile`, reaching the code as
   `NOOK_VERSION` (`nook --version`, and the footer tooltip). Every user-visible change goes in
   `CHANGELOG.md` under *Unreleased* as it is made, and the version is bumped when that section
-  becomes a release — a feature or behaviour change is a minor bump while the major is 0.
+  becomes a release — a breaking change is a major bump, a feature a minor, a fix a patch.
 
 ## Hard-won platform constraints — do not re-litigate
 

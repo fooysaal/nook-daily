@@ -46,6 +46,23 @@ PREFIX=/usr/local sudo ./install.sh   # system-wide
 make uninstall                    # remove everything above
 ```
 
+### Updating
+
+From the folder you cloned:
+
+```sh
+cd nook-daily && git pull && ./install.sh
+```
+
+Then **quit Nook from the tray menu and start it again** from the app menu. The running process
+keeps the old binary until it restarts, and versions before 1.0 aren't single-instance, so
+launching without quitting gives you two tray icons. Your notes, tasks and clips in
+`~/.local/share/nook/data.ini` are untouched, and the autostart entry is refreshed unless you
+switched it off. Deleted the clone? Clone again and run `./install.sh`.
+
+To hear about new versions, use **Watch → Custom → Releases** on the GitHub repository. Changes
+are listed in [CHANGELOG.md](CHANGELOG.md).
+
 If `~/.local/bin` isn't on your `PATH`, the installer says so — that only affects typing `nook`
 in a shell. The app menu entry and autostart use the full path, so Nook still starts. Log out and
 back in if the tray icon doesn't show up immediately.

@@ -2,13 +2,18 @@
 
 All notable changes to Nook are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html) — while the major is `0`, a minor bump
-is a feature release and may change behaviour.
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html) — a breaking change bumps the major,
+a feature the minor, a fix the patch.
 
 The running version is `VERSION` in the `Makefile`, reported by `nook --version` and in the
 footer's tooltip.
 
 ## [Unreleased]
+
+## [1.0.0] — 2026-10-03
+
+Your data can move between machines, Nook runs as a single instance, and the tray icon comes up
+reliably when you log in.
 
 ### Added
 
@@ -33,7 +38,6 @@ footer's tooltip.
 - **Tray icon and menu survive starting with the session.** Started in the same second as
   GNOME Shell, the icon could stay a `…` with no Open/Quit menu until a suspend and wake. Nook
   now re-announces its icon and menu a few seconds after registering.
-
 - **Nook starts even when `~/.local/bin` is off your `PATH`.** The installed desktop entry and
   the autostart copy now carry the full path to the binary instead of a bare `Exec=nook`, which
   the app menu and the login session could not resolve — the install looked fine and nothing

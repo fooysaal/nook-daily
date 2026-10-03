@@ -1,5 +1,5 @@
 CC      ?= gcc
-VERSION  = 0.2.0
+VERSION  = 1.0.0
 PKGS     = gtk+-3.0
 PREFIX  ?= $(HOME)/.local
 ICONDIR ?= $(CURDIR)/data/icons
