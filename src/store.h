@@ -26,6 +26,9 @@ void   store_add(Section section, const char *text, gboolean keep);
 void   store_remove(Section section, const char *id);
 void   store_toggle(Section section, const char *id);
 void   store_clear(void);
+gboolean store_export(const char *path, GError **error);
+/* Merges by id and returns how many items were added, or -1 with `error` set. */
+int    store_import(const char *path, GError **error);
 gboolean store_auto_clips(void);
 void   store_set_auto_clips(gboolean enabled);
 void   store_free(void);

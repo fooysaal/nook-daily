@@ -10,7 +10,29 @@ footer's tooltip.
 
 ## [Unreleased]
 
+### Added
+
+- **Export and import.** The panel's `⋯` menu saves everything — notes, tasks and clips — to an
+  `.ini` file you choose, and imports one on another machine. Import merges: items already
+  present are skipped, so importing the same file twice adds nothing, and deletions are not
+  carried over. Exports are readable only by you, since clips can hold secrets.
+- **Tray steps are logged to the journal.** Registering with the tray host, the host fetching
+  the menu and reading the icon each log one `nook:` line, so
+  `journalctl --user -b | grep 'nook:'` shows where a broken tray icon stopped.
+
 ### Fixed
+
+- **Installing no longer creates an icon cache in your shared icon folder.** `make install` used
+  to generate `~/.local/share/icons/hicolor/icon-theme.cache`, and GTK trusts that cache over
+  the folder — so icons other apps drop there later (browser web apps, for one) could go missing.
+  An existing cache is still refreshed; none is created.
+- **Reinstalling respects autostart being switched off.** `install.sh` no longer overwrites an
+  autostart entry your desktop settings have disabled.
+- **Launching Nook again opens the running panel.** Each click on the app icon used to start
+  another process with its own tray icon; Nook is now a single instance.
+- **Tray icon and menu survive starting with the session.** Started in the same second as
+  GNOME Shell, the icon could stay a `…` with no Open/Quit menu until a suspend and wake. Nook
+  now re-announces its icon and menu a few seconds after registering.
 
 - **Nook starts even when `~/.local/bin` is off your `PATH`.** The installed desktop entry and
   the autostart copy now carry the full path to the binary instead of a bare `Exec=nook`, which

@@ -8,6 +8,12 @@ CFLAGS  += -std=c11 -Wall -Wextra -O2 -DNOOK_ICON_DIR='"$(ICONDIR)"' -DNOOK_VERS
            $(shell pkg-config --cflags $(PKGS))
 LDLIBS  += $(shell pkg-config --libs $(PKGS))
 
+# The user's hicolor directory is shared with other apps (browser web apps among them) that drop
+# icons in without refreshing a cache. GTK trusts a cache over the directory, so creating one
+# could hide their icons; only refresh a cache that already exists.
+REFRESH_ICON_CACHE = if [ -f $(DESTDIR)$(PREFIX)/share/icons/hicolor/icon-theme.cache ]; then \
+	  gtk-update-icon-cache -qtf $(DESTDIR)$(PREFIX)/share/icons/hicolor 2>/dev/null || true; fi
+
 SRC = src/main.c src/store.c src/tray.c
 OBJ = $(SRC:.c=.o)
 
@@ -28,7 +34,7 @@ install:
 	  sz=$$(basename $$(dirname $$(dirname $$png))); \
 	  install -Dm644 $$png $(DESTDIR)$(PREFIX)/share/icons/hicolor/$$sz/apps/nook.png; \
 	done
-	-gtk-update-icon-cache -qtf $(DESTDIR)$(PREFIX)/share/icons/hicolor 2>/dev/null || true
+	$(REFRESH_ICON_CACHE)
 	install -d $(DESTDIR)$(PREFIX)/share/applications
 	sed 's|^Exec=nook$$|Exec=$(PREFIX)/bin/nook|' data/nook.desktop \
 	  > $(DESTDIR)$(PREFIX)/share/applications/nook.desktop
@@ -37,6 +43,7 @@ install:
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/nook
 	rm -f $(DESTDIR)$(PREFIX)/share/icons/hicolor/*/apps/nook.png
+	$(REFRESH_ICON_CACHE)
 	rm -f $(DESTDIR)$(PREFIX)/share/applications/nook.desktop
 	rm -f $(HOME)/.config/autostart/nook.desktop
 

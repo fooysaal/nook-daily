@@ -21,10 +21,17 @@ fi
 
 make install PREFIX="$PREFIX"
 
+AUTOSTART_FILE="$HOME/.config/autostart/nook.desktop"
 if [ "$AUTOSTART" = "1" ]; then
-    mkdir -p "$HOME/.config/autostart"
-    cp "$PREFIX/share/applications/nook.desktop" "$HOME/.config/autostart/nook.desktop"
-    echo "Autostart enabled (AUTOSTART=0 to skip)."
+    # Turning autostart off in the desktop's settings marks the file rather than deleting it;
+    # overwriting it would quietly switch Nook back on.
+    if [ -f "$AUTOSTART_FILE" ] && grep -qE '^(Hidden=true|X-GNOME-Autostart-enabled=false)' "$AUTOSTART_FILE"; then
+        echo "Autostart left off, as set in your desktop settings."
+    else
+        mkdir -p "$HOME/.config/autostart"
+        cp "$PREFIX/share/applications/nook.desktop" "$AUTOSTART_FILE"
+        echo "Autostart enabled (AUTOSTART=0 to skip)."
+    fi
 fi
 
 echo "Installed to $PREFIX/bin/nook"

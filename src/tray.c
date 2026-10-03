@@ -82,6 +82,9 @@ static struct {
     GDBusConnection *bus;
     char *bus_name;
     gboolean registered;
+    gboolean logged_menu_fetch;
+    gboolean logged_icon_read;
+    guint layout_revision;
 } tray;
 
 static const struct { int id; const char *label; } MENU_ITEMS[] = {
@@ -135,8 +138,13 @@ static GVariant *sni_get_property(GDBusConnection *conn, const char *sender, con
         return g_variant_new_string(tray.title);
     if (g_strcmp0(name, "Status") == 0)
         return g_variant_new_string("Active");
-    if (g_strcmp0(name, "IconName") == 0)
+    if (g_strcmp0(name, "IconName") == 0) {
+        if (!tray.logged_icon_read) {
+            tray.logged_icon_read = TRUE;
+            g_message("nook: host read the icon");
+        }
         return g_variant_new_string(tray.icon_name);
+    }
     if (g_strcmp0(name, "IconThemePath") == 0)
         return g_variant_new_string(tray.icon_theme_path);
     /* false tells the host we handle clicks ourselves, so it calls Activate. */
@@ -153,8 +161,12 @@ static void menu_method(GDBusConnection *conn, const char *sender, const char *p
     (void) conn; (void) sender; (void) path; (void) iface; (void) data;
 
     if (g_strcmp0(method, "GetLayout") == 0) {
+        if (!tray.logged_menu_fetch) {
+            tray.logged_menu_fetch = TRUE;
+            g_message("nook: host fetched the menu");
+        }
         g_dbus_method_invocation_return_value(invocation,
-            g_variant_new("(u@(ia{sv}av))", 1u, build_layout()));
+            g_variant_new("(u@(ia{sv}av))", tray.layout_revision, build_layout()));
         return;
     }
 
@@ -238,6 +250,21 @@ static GVariant *menu_get_property(GDBusConnection *conn, const char *sender, co
 static const GDBusInterfaceVTable SNI_VTABLE = { sni_method, sni_get_property, NULL, { 0 } };
 static const GDBusInterfaceVTable MENU_VTABLE = { menu_method, menu_get_property, NULL, { 0 } };
 
+/* Registering in the same second GNOME Shell starts can leave the AppIndicator extension showing
+ * its "…" placeholder with no menu, while Activate still works; it never retries on its own, and
+ * only a later redraw (e.g. after suspend) fixed it. Nudging it once the shell has settled makes it
+ * re-read the icon and re-fetch the menu. */
+static gboolean reannounce(gpointer data) {
+    (void) data;
+    tray.layout_revision++;
+    g_dbus_connection_emit_signal(tray.bus, NULL, ITEM_PATH, "org.kde.StatusNotifierItem",
+                                  "NewIcon", NULL, NULL);
+    g_dbus_connection_emit_signal(tray.bus, NULL, MENU_PATH, "com.canonical.dbusmenu",
+                                  "LayoutUpdated", g_variant_new("(ui)", tray.layout_revision, 0),
+                                  NULL);
+    return G_SOURCE_REMOVE;
+}
+
 static void on_registered(GObject *source, GAsyncResult *result, gpointer data) {
     (void) data;
     g_autoptr(GError) error = NULL;
@@ -245,6 +272,8 @@ static void on_registered(GObject *source, GAsyncResult *result, gpointer data) 
         g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &error);
     if (reply) {
         tray.registered = TRUE;
+        g_message("nook: registered with tray host");
+        g_timeout_add_seconds(5, reannounce, NULL);
     } else {
         g_warning("nook: tray registration failed: %s", error->message);
     }
@@ -321,6 +350,7 @@ void tray_init(const char *icon_name, const char *icon_theme_path, const char *t
     tray.on_activate = on_activate;
     tray.on_menu = on_menu;
     tray.user_data = user_data;
+    tray.layout_revision = 1;
     tray.bus_name = g_strdup_printf("org.kde.StatusNotifierItem-%d-1", getpid());
 
     g_bus_own_name(G_BUS_TYPE_SESSION, tray.bus_name, G_BUS_NAME_OWNER_FLAGS_NONE,

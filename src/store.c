@@ -29,12 +29,56 @@ static gint by_ts(gconstpointer a, gconstpointer b) {
     return diff < 0 ? -1 : 1;
 }
 
+static GList *find(Section section, const char *id) {
+    for (GList *l = lists[section]; l; l = l->next)
+        if (g_strcmp0(((Item *) l->data)->id, id) == 0)
+            return l;
+    return NULL;
+}
+
 GList *store_items(Section section) {
     return lists[section];
 }
 
 gboolean store_ok(void) {
     return save_ok;
+}
+
+/* Skips ids already present, so importing the same export twice adds nothing. */
+static int merge_items(GKeyFile *kf) {
+    int added = 0;
+    gsize count = 0;
+    g_auto(GStrv) groups = g_key_file_get_groups(kf, &count);
+
+    for (gsize i = 0; i < count; i++) {
+        const char *dot = strchr(groups[i], '.');
+        if (!dot)
+            continue;
+
+        for (int s = 0; s < SECTION_COUNT; s++) {
+            gsize prefix_len = strlen(SECTION_KEYS[s]);
+            if (strncmp(groups[i], SECTION_KEYS[s], prefix_len) != 0 || groups[i][prefix_len] != '.')
+                continue;
+
+            if (find(s, dot + 1))
+                break;
+
+            Item *item = g_new0(Item, 1);
+            item->id = g_strdup(dot + 1);
+            item->text = g_key_file_get_string(kf, groups[i], "text", NULL);
+            item->ts = g_key_file_get_int64(kf, groups[i], "ts", NULL);
+            item->done = g_key_file_get_boolean(kf, groups[i], "done", NULL);
+
+            if (item->text) {
+                lists[s] = g_list_insert_sorted(lists[s], item, by_ts);
+                added++;
+            } else {
+                item_free(item);
+            }
+            break;
+        }
+    }
+    return added;
 }
 
 void store_load(void) {
@@ -52,44 +96,11 @@ void store_load(void) {
     if (g_key_file_has_key(kf, SETTINGS_GROUP, "auto_clips", NULL))
         auto_clips = g_key_file_get_boolean(kf, SETTINGS_GROUP, "auto_clips", NULL);
 
-    gsize count = 0;
-    g_auto(GStrv) groups = g_key_file_get_groups(kf, &count);
-
-    for (gsize i = 0; i < count; i++) {
-        const char *dot = strchr(groups[i], '.');
-        if (!dot)
-            continue;
-
-        for (int s = 0; s < SECTION_COUNT; s++) {
-            gsize prefix_len = strlen(SECTION_KEYS[s]);
-            if (strncmp(groups[i], SECTION_KEYS[s], prefix_len) != 0 || groups[i][prefix_len] != '.')
-                continue;
-
-            Item *item = g_new0(Item, 1);
-            item->id = g_strdup(dot + 1);
-            item->text = g_key_file_get_string(kf, groups[i], "text", NULL);
-            item->ts = g_key_file_get_int64(kf, groups[i], "ts", NULL);
-            item->done = g_key_file_get_boolean(kf, groups[i], "done", NULL);
-
-            if (item->text)
-                lists[s] = g_list_insert_sorted(lists[s], item, by_ts);
-            else
-                item_free(item);
-            break;
-        }
-    }
+    merge_items(kf);
 }
 
-void store_save(void) {
-    g_autofree char *path = data_path();
-    g_autofree char *dir = g_path_get_dirname(path);
-    if (g_mkdir_with_parents(dir, 0700) != 0) {
-        g_warning("nook: cannot create %s: %s", dir, g_strerror(errno));
-        save_ok = FALSE;
-        return;
-    }
-
-    g_autoptr(GKeyFile) kf = g_key_file_new();
+static GKeyFile *build_keyfile(void) {
+    GKeyFile *kf = g_key_file_new();
     for (int s = 0; s < SECTION_COUNT; s++) {
         for (GList *l = lists[s]; l; l = l->next) {
             Item *item = l->data;
@@ -101,7 +112,19 @@ void store_save(void) {
         }
     }
     g_key_file_set_boolean(kf, SETTINGS_GROUP, "auto_clips", auto_clips);
+    return kf;
+}
 
+void store_save(void) {
+    g_autofree char *path = data_path();
+    g_autofree char *dir = g_path_get_dirname(path);
+    if (g_mkdir_with_parents(dir, 0700) != 0) {
+        g_warning("nook: cannot create %s: %s", dir, g_strerror(errno));
+        save_ok = FALSE;
+        return;
+    }
+
+    g_autoptr(GKeyFile) kf = build_keyfile();
     g_autoptr(GError) error = NULL;
     save_ok = g_key_file_save_to_file(kf, path, &error);
     if (!save_ok)
@@ -141,13 +164,6 @@ void store_add(Section section, const char *text, gboolean keep) {
     store_save();
 }
 
-static GList *find(Section section, const char *id) {
-    for (GList *l = lists[section]; l; l = l->next)
-        if (g_strcmp0(((Item *) l->data)->id, id) == 0)
-            return l;
-    return NULL;
-}
-
 void store_remove(Section section, const char *id) {
     GList *link = find(section, id);
     if (!link)
@@ -164,6 +180,27 @@ void store_toggle(Section section, const char *id) {
     Item *item = link->data;
     item->done = !item->done;
     store_save();
+}
+
+/* Clips can hold secrets, so an export is readable only by its owner. */
+gboolean store_export(const char *path, GError **error) {
+    g_autoptr(GKeyFile) kf = build_keyfile();
+    gsize length = 0;
+    g_autofree char *data = g_key_file_to_data(kf, &length, NULL);
+    return g_file_set_contents_full(path, data, length, G_FILE_SET_CONTENTS_CONSISTENT, 0600,
+                                    error);
+}
+
+int store_import(const char *path, GError **error) {
+    g_autoptr(GKeyFile) kf = g_key_file_new();
+    if (!g_key_file_load_from_file(kf, path, G_KEY_FILE_NONE, error))
+        return -1;
+    int added = merge_items(kf);
+    if (added) {
+        trim_clips(NULL);
+        store_save();
+    }
+    return added;
 }
 
 gboolean store_auto_clips(void) {

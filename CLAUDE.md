@@ -37,6 +37,10 @@ Fully local. No account, cloud, telemetry, analytics, or sync.
 - Tasks — add/check/delete.
 - Clips — automatic clipboard capture (toggle in the tab), read the clipboard or paste manually,
   copy back, keep, delete.
+- Export / import — the `⋯` menu in the tab row writes the same GKeyFile to a chosen path
+  (mode 0600; clips included) and imports one by **merging on item id**, never replacing.
+  The local `auto_clips` setting is not imported. Panel focus-out is suppressed while the file
+  chooser is open, or opening it would hide the panel.
 - Capture — **removed on request.** The placeholder tab and `build_capture_page()` are gone;
   do not reinstate them. Screenshot/recording is not the direction.
 
@@ -110,6 +114,21 @@ Fully local. No account, cloud, telemetry, analytics, or sync.
   `org.gnome.desktop.interface clock-format` uses `%l`, and glib pads a single-digit hour with
   U+2007, which `g_strstrip()` does not remove — the time rendered as `⁠ 1:36 PM`. `format_clock()`
   skips it explicitly.
+- **Registering during shell startup can leave a dead `…` icon.** Autostarted in the same
+  second GNOME Shell starts, the item registered and Activate worked, but the extension showed
+  its `image-loading-symbolic` placeholder with no menu and never retried — only a suspend/wake
+  redraw fixed it, and neither side logged anything. `src/tray.c` therefore emits `NewIcon` and
+  `LayoutUpdated` once, 5s after registration. To debug a broken icon:
+  `journalctl --user -b | grep 'nook:'` shows which of registered / menu fetched / icon read
+  never happened; the extension's own debug output needs `G_MESSAGES_DEBUG=all` in the shell's
+  environment.
+- **Single instance comes from `GtkApplication`.** A second launch forwards `activate` to the
+  running process, which opens the panel, and exits. Without it every desktop-icon click added
+  another process and another tray icon.
+- **Never create an icon cache in the user's hicolor directory.** `~/.local/share/icons/hicolor`
+  is shared with other apps (Chrome web apps write there) that add icons without refreshing a
+  cache, and GTK trusts a cache over the directory, so a cache Nook created could hide their
+  icons. `make install`/`uninstall` only refresh one that already exists.
 - **Vanilla GNOME has no AppIndicator host.** The icon will not appear on Fedora Workstation or
   Arch + GNOME without `gnome-shell-extension-appindicator`. `install.sh` warns about this.
 
@@ -133,6 +152,7 @@ Manual QA:
 
 - Tray icon shows the Mote artwork, not a placeholder.
 - No window visible at startup.
+- Launching Nook again while it runs opens the panel; `pgrep -c nook` stays 1.
 - Double-clicking the icon opens the panel; a single click shows Open / Quit; Quit lives only
   in the tray menu, not in the panel.
 - With no tray host, the panel opens by itself after 3s and a warning is logged, rather than the
@@ -149,6 +169,8 @@ Manual QA:
 - Every list groups under Today / Yesterday / locale date, and times follow
   `org.gnome.desktop.interface clock-format`. Seed `data.ini` with timestamps a few days apart to
   check it; a schema-less system must fall back to 24h rather than fail.
+- ⋯ → Export writes a 0600 file; importing it under a fresh `XDG_DATA_HOME` restores all three
+  tabs, a second import reports nothing new, and the panel stays up while the chooser is open.
 - Escape and clicking away both hide the panel; Quit exits and removes the icon.
 
 ## Development note

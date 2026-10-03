@@ -79,7 +79,7 @@ taskbar entry.
 
 ```
 ┌──────────────────────────────────┐
-│ Notes   Tasks   Clips          ✕ │  ← tab row; ✕ hides the panel
+│ Notes   Tasks   Clips        ⋯ ✕ │  ← tab row; ⋯ export/import, ✕ hides the panel
 ├──────────────────────────────────┤
 │ [ Quick note…            ] [Add] │  ← type, press Enter or click Add
 │                                  │
@@ -143,6 +143,13 @@ ts=1758300000
 
 It's a GKeyFile — readable, greppable, editable in any text editor, trivial to back up or sync
 with whatever tool you already use. No database, no JSON library, no cloud.
+
+### Moving to another machine
+
+**⋯ → Export data…** saves notes, tasks and clips to a `nook-backup-<date>.ini` file readable
+only by you (clips can hold passwords or tokens — treat the file accordingly). On the other
+machine, **⋯ → Import data…** merges it in: anything already there is kept, items already
+imported are skipped, and deletions are not carried over.
 
 ## Troubleshooting
 

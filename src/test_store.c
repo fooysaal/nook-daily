@@ -109,6 +109,38 @@ int main(void) {
     assert(store_ok());
     assert(store_items(SECTION_TASKS) == NULL);
 
+    /* Export then import into an emptied store brings everything back; a second import of the
+     * same file must merge to nothing rather than duplicate. */
+    store_clear();
+    store_add(SECTION_NOTES, "exported note", FALSE);
+    store_add(SECTION_TASKS, "exported task", FALSE);
+    store_toggle(SECTION_TASKS, nth(SECTION_TASKS, 0)->id);
+    store_add(SECTION_CLIPS, "exported secret", TRUE);
+    g_autofree char *backup = g_build_filename(tmp, "backup.ini", NULL);
+    assert(store_export(backup, NULL));
+    GStatBuf backup_stat;
+    assert(g_stat(backup, &backup_stat) == 0);
+    assert((backup_stat.st_mode & 0777) == 0600);
+
+    store_clear();
+    store_add(SECTION_NOTES, "local note", FALSE);
+    assert(store_import(backup, NULL) == 3);
+    assert(g_list_length(store_items(SECTION_NOTES)) == 2);
+    assert(strcmp(nth(SECTION_TASKS, 0)->text, "exported task") == 0);
+    assert(nth(SECTION_TASKS, 0)->done == TRUE);
+    assert(nth(SECTION_CLIPS, 0)->done == TRUE);
+    assert(store_import(backup, NULL) == 0);
+    assert(g_list_length(store_items(SECTION_NOTES)) == 2);
+    store_free();
+    store_load();
+    assert(g_list_length(store_items(SECTION_NOTES)) == 2);
+
+    g_autoptr(GError) import_error = NULL;
+    g_autofree char *missing = g_build_filename(tmp, "missing.ini", NULL);
+    assert(store_import(missing, &import_error) == -1);
+    assert(import_error != NULL);
+    g_unlink(backup);
+
     store_free();
     g_autofree char *data = g_build_filename(tmp, "nook", "data.ini", NULL);
     g_unlink(data);

@@ -12,6 +12,7 @@
 #define CLIP_PREVIEW_CHARS  160
 #define CLIP_PREVIEW_LINES  3
 #define COPY_FLASH_MS       1500
+#define FOOTER_FLASH_S      4
 #define COPY_ICON           "edit-copy-symbolic"
 #define COPIED_ICON         "object-select-symbolic"
 
@@ -31,6 +32,8 @@ static char *skipped_digest;
 static GtkWidget *copied_button;
 static guint copied_timeout;
 static guint clipboard_generation;
+static guint footer_timeout;
+static gboolean chooser_open;
 static Page pages[SECTION_COUNT];
 
 static const char *EMPTY_TEXT[SECTION_COUNT] = {
@@ -62,6 +65,8 @@ static const char *STYLE =
     "list row:hover { background: rgba(255,255,255,0.03); }"
     ".dim { color: #766f8d; font-size: 10px; }"
     ".day { color: #a79fc0; font-size: 10px; font-weight: bold; letter-spacing: 1px; }"
+    "popover { background: #26213a; border: 1px solid #3a3350; }"
+    "popover modelbutton { color: #efeaf7; }"
     ".foot { border-top: 1px solid #2c2740; color: #766f8d; font-size: 10px; }";
 
 static void rebuild_list(Page *page);
@@ -147,13 +152,18 @@ static gboolean clear_copied_flash(gpointer data) {
         copied_button = NULL;
     }
     copied_timeout = 0;
-    refresh_status();
+    if (!footer_timeout)
+        refresh_status();
     return G_SOURCE_REMOVE;
 }
 
 static void on_copy(GtkButton *button, gpointer data) {
     (void) data;
     set_clipboard(g_object_get_data(G_OBJECT(button), "item-text"));
+    if (footer_timeout) {
+        g_source_remove(footer_timeout);
+        footer_timeout = 0;
+    }
 
     /* A second copy takes the flash over, rather than letting the first timer cut it short. */
     if (copied_timeout) {
@@ -634,7 +644,7 @@ static void on_tray_activate(gpointer data) {
 static void on_tray_menu(int item_id, gpointer data) {
     (void) data;
     if (item_id == TRAY_MENU_QUIT)
-        gtk_main_quit();
+        g_application_quit(g_application_get_default());
     else
         show_panel(gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook)));
 }
@@ -642,6 +652,8 @@ static void on_tray_menu(int item_id, gpointer data) {
 static gboolean on_focus_out(GtkWidget *widget, GdkEventFocus *event, gpointer data) {
     (void) event;
     (void) data;
+    if (chooser_open)
+        return FALSE;
     last_hidden_us = g_get_monotonic_time();
     gtk_widget_hide(widget);
     return FALSE;
@@ -663,17 +675,134 @@ static gboolean on_delete_event(GtkWidget *widget, GdkEvent *event, gpointer dat
     return TRUE;
 }
 
-int main(int argc, char **argv) {
-    if (argc > 1 && (g_strcmp0(argv[1], "--version") == 0 || g_strcmp0(argv[1], "-v") == 0)) {
-        g_print("nook %s\n", NOOK_VERSION);
-        return 0;
+static gboolean restore_footer(gpointer data) {
+    (void) data;
+    footer_timeout = 0;
+    refresh_status();
+    return G_SOURCE_REMOVE;
+}
+
+static void flash_footer(const char *markup) {
+    gtk_label_set_markup(GTK_LABEL(foot_label), markup);
+    if (footer_timeout)
+        g_source_remove(footer_timeout);
+    footer_timeout = g_timeout_add_seconds(FOOTER_FLASH_S, restore_footer, NULL);
+}
+
+static void flash_error(const char *what, const GError *error) {
+    g_autofree char *markup =
+        g_markup_printf_escaped("<span foreground=\"#e88\">%s: %s</span>", what, error->message);
+    flash_footer(markup);
+}
+
+static void export_to(const char *path) {
+    g_autoptr(GError) error = NULL;
+    if (!store_export(path, &error)) {
+        flash_error("Export failed", error);
+        return;
+    }
+    g_autofree char *name = g_path_get_basename(path);
+    g_autofree char *markup = g_markup_printf_escaped("Exported to %s", name);
+    flash_footer(markup);
+}
+
+static void import_from(const char *path) {
+    g_autoptr(GError) error = NULL;
+    int added = store_import(path, &error);
+    if (added < 0) {
+        flash_error("Import failed", error);
+        return;
+    }
+    for (int s = 0; s < SECTION_COUNT; s++)
+        rebuild_list(&pages[s]);
+    if (!store_ok()) {
+        refresh_status();
+        return;
+    }
+    if (added == 0) {
+        flash_footer("Nothing new to import");
+        return;
+    }
+    g_autofree char *text = g_strdup_printf("Imported %d item%s", added, added == 1 ? "" : "s");
+    flash_footer(text);
+}
+
+static void on_chooser_response(GtkNativeDialog *chooser, int response, gpointer data) {
+    gboolean exporting = GPOINTER_TO_INT(data);
+    chooser_open = FALSE;
+    if (response == GTK_RESPONSE_ACCEPT) {
+        g_autofree char *path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(chooser));
+        if (path && exporting)
+            export_to(path);
+        else if (path)
+            import_from(path);
+    }
+    g_object_unref(chooser);
+    gtk_window_present(GTK_WINDOW(window));
+}
+
+static void on_data_menu_clicked(GtkButton *button, gpointer data) {
+    (void) button;
+    gboolean exporting = GPOINTER_TO_INT(data);
+    GtkFileChooserNative *chooser = gtk_file_chooser_native_new(
+        exporting ? "Export Nook data" : "Import Nook data", GTK_WINDOW(window),
+        exporting ? GTK_FILE_CHOOSER_ACTION_SAVE : GTK_FILE_CHOOSER_ACTION_OPEN,
+        exporting ? "_Export" : "_Import", "_Cancel");
+    gtk_native_dialog_set_modal(GTK_NATIVE_DIALOG(chooser), TRUE);
+
+    GtkFileFilter *filter = gtk_file_filter_new();
+    gtk_file_filter_set_name(filter, "Nook data (*.ini)");
+    gtk_file_filter_add_pattern(filter, "*.ini");
+    gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(chooser), filter);
+
+    if (exporting) {
+        g_autoptr(GDateTime) now = g_date_time_new_now_local();
+        g_autofree char *name = g_date_time_format(now, "nook-backup-%Y-%m-%d.ini");
+        gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(chooser), name);
+        gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(chooser), TRUE);
     }
 
-    /* Wayland forbids a client from positioning its own window or raising itself above others,
-     * so the panel would open wherever the compositor liked. Must precede gtk_init.
-     * ponytail: Xwayland dependency; a GNOME Shell extension is the upgrade path if it is dropped. */
-    gdk_set_allowed_backends("x11,*");
-    gtk_init(&argc, &argv);
+    g_signal_connect(chooser, "response", G_CALLBACK(on_chooser_response), data);
+    chooser_open = TRUE;
+    gtk_native_dialog_show(GTK_NATIVE_DIALOG(chooser));
+}
+
+static GtkWidget *build_data_menu_button(void) {
+    GtkWidget *menu_button = gtk_menu_button_new();
+    gtk_button_set_label(GTK_BUTTON(menu_button), "\xe2\x8b\xaf");
+    gtk_widget_set_tooltip_text(menu_button, "Export / import");
+    atk_object_set_name(gtk_widget_get_accessible(menu_button), "Export or import data");
+    gtk_style_context_add_class(gtk_widget_get_style_context(menu_button), "flat");
+
+    GtkWidget *items = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_container_set_border_width(GTK_CONTAINER(items), 6);
+    const struct { const char *label; gboolean exporting; } entries[] = {
+        { "Export data\xe2\x80\xa6", TRUE },
+        { "Import data\xe2\x80\xa6", FALSE },
+    };
+    for (gsize i = 0; i < G_N_ELEMENTS(entries); i++) {
+        GtkWidget *item = gtk_model_button_new();
+        g_object_set(item, "text", entries[i].label, NULL);
+        g_signal_connect(item, "clicked", G_CALLBACK(on_data_menu_clicked),
+                         GINT_TO_POINTER(entries[i].exporting));
+        gtk_box_pack_start(GTK_BOX(items), item, FALSE, FALSE, 0);
+    }
+    gtk_widget_show_all(items);
+
+    GtkWidget *popover = gtk_popover_new(menu_button);
+    gtk_container_add(GTK_CONTAINER(popover), items);
+    gtk_menu_button_set_popover(GTK_MENU_BUTTON(menu_button), popover);
+    return menu_button;
+}
+
+/* A second launch lands here in the already-running instance, so it opens the panel instead of
+ * starting another process with its own tray icon. */
+static void on_activate(GtkApplication *app, gpointer data) {
+    (void) data;
+    if (window) {
+        show_panel(gtk_notebook_get_current_page(GTK_NOTEBOOK(notebook)));
+        return;
+    }
 
     store_load();
 
@@ -713,6 +842,7 @@ int main(int argc, char **argv) {
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), build_page(SECTION_CLIPS, "Paste text…"), gtk_label_new("Clips"));
 
     GtkWidget *actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+    gtk_box_pack_start(GTK_BOX(actions), build_data_menu_button(), FALSE, FALSE, 0);
     GtkWidget *close_button = gtk_button_new_with_label("\xe2\x9c\x95");
     gtk_widget_set_tooltip_text(close_button, "Close (Esc)");
     atk_object_set_name(gtk_widget_get_accessible(close_button), "Close");
@@ -742,10 +872,27 @@ int main(int argc, char **argv) {
 
     tray_init("nook", NOOK_ICON_DIR, "Nook", on_tray_activate, on_tray_menu, NULL);
 
-    gtk_main();
+    g_application_hold(G_APPLICATION(app));
+}
+
+int main(int argc, char **argv) {
+    if (argc > 1 && (g_strcmp0(argv[1], "--version") == 0 || g_strcmp0(argv[1], "-v") == 0)) {
+        g_print("nook %s\n", NOOK_VERSION);
+        return 0;
+    }
+
+    /* Wayland forbids a client from positioning its own window or raising itself above others,
+     * so the panel would open wherever the compositor liked. Must precede gtk_init.
+     * ponytail: Xwayland dependency; a GNOME Shell extension is the upgrade path if it is dropped. */
+    gdk_set_allowed_backends("x11,*");
+
+    GtkApplication *app = gtk_application_new("io.github.nook.Nook", G_APPLICATION_DEFAULT_FLAGS);
+    g_signal_connect(app, "activate", G_CALLBACK(on_activate), NULL);
+    int status = g_application_run(G_APPLICATION(app), argc, argv);
+    g_object_unref(app);
 
     g_free(last_capture);
     g_free(skipped_digest);
     store_free();
-    return 0;
+    return status;
 }
